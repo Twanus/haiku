@@ -84,4 +84,35 @@ mod tests {
             Err(HaikuError::WrongLineCount)
         ));
     }
+
+    #[test]
+    fn classic_haiku_is_5_7_5() {
+        // Basho's frog-pond haiku.
+        let haiku = Haiku::new(
+            "An old silent pond",
+            "A frog jumps into the pond",
+            "Splash! Silence again",
+        )
+        .expect("should be valid 5-7-5");
+        assert_eq!(haiku.syllable_counts(), [5, 7, 5]);
+    }
+
+    #[test]
+    fn haiku_exercising_syllable_edge_cases_is_5_7_5() {
+        // Crafted to hit the silent-e, syllabic-le, and silent-ed rules
+        // in `syllables::count`.
+        let haiku = Haiku::new(
+            "I walked to the store",
+            "Wanted a little table",
+            "Whole apple loved much",
+        )
+        .expect("should be valid 5-7-5");
+        assert_eq!(haiku.syllable_counts(), [5, 7, 5]);
+    }
+
+    #[test]
+    fn wrong_syllable_counts_are_rejected() {
+        let result = Haiku::new("too short", "still not seventeen", "way way off");
+        assert!(matches!(result, Err(HaikuError::BadSyllables(_, _, _))));
+    }
 }

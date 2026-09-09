@@ -3,8 +3,9 @@
 A small Rust CLI for writing, checking, and collecting 5-7-5 haikus.
 
 ```bash
-haiku new "old pond" "a frog jumps in" "the sound of water"
-haiku check
+haiku new "an old silent pond" "a frog jumps into the pond" "splash silence again"
+haiku new                    # prompts 1> 2> 3>
+haiku check --file poem.txt
 haiku list
 haiku random
 ```
