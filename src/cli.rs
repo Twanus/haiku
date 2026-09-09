@@ -90,8 +90,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             if dry_run {
                 println!("{haiku}");
             } else {
-                store::save(&haiku)?;
-                println!("saved:\n{haiku}");
+                let rendered = haiku.to_string();
+                store::save(haiku)?;
+                println!("saved:\n{rendered}");
             }
         }
         Command::Check { text, file } => {
