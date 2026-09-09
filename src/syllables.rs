@@ -100,9 +100,17 @@ mod tests {
 
     #[test]
     fn silent_ed_after_consonant() {
-        for word in ["walked", "jumped", "loved", "played"] {
+        for word in ["walked", "jumped", "loved"] {
             assert_eq!(count(word), 1, "{word}");
         }
+    }
+
+    #[test]
+    fn ed_after_vowel_group_is_unaffected_by_silent_ed_rule() {
+        // "played" is 1 syllable, but not because of the silent-`ed` rule:
+        // `y` counts as a vowel here, so "ayed" is already a single vowel
+        // group before that rule ever runs.
+        assert_eq!(count("played"), 1);
     }
 
     #[test]

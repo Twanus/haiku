@@ -29,6 +29,9 @@ impl Haiku {
                 line3.into().trim().to_string(),
             ],
         };
+        if haiku.lines.iter().any(|line| line.is_empty()) {
+            return Err(HaikuError::WrongLineCount);
+        }
         haiku.validate()?;
         Ok(haiku)
     }
@@ -114,5 +117,19 @@ mod tests {
     fn wrong_syllable_counts_are_rejected() {
         let result = Haiku::new("too short", "still not seventeen", "way way off");
         assert!(matches!(result, Err(HaikuError::BadSyllables(_, _, _))));
+    }
+
+    #[test]
+    fn new_rejects_empty_lines_like_parse_does() {
+        // Previously this hit `BadSyllables(0, 0, 0)` instead, disagreeing
+        // with `parse`, which already filters blank lines to `WrongLineCount`.
+        assert!(matches!(
+            Haiku::new("", "", ""),
+            Err(HaikuError::WrongLineCount)
+        ));
+        assert!(matches!(
+            Haiku::new("  ", "an old silent pond", "splash silence again"),
+            Err(HaikuError::WrongLineCount)
+        ));
     }
 }
