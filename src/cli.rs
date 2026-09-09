@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
@@ -50,12 +50,27 @@ enum Command {
     Random,
 }
 
-fn read_line_prompt(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
+/// Read one line, pre-filling `initial` as editable text when stdin is a
+/// real terminal (so a rejected line can be corrected instead of retyped).
+/// Falls back to a plain read when stdin isn't interactive (e.g. piped),
+/// where line editing isn't possible — an empty line there just repeats
+/// `initial` as-is.
+fn read_line_prompt(prompt: &str, initial: &str) -> Result<String, Box<dyn std::error::Error>> {
+    if io::stdin().is_terminal() {
+        let mut editor = rustyline::DefaultEditor::new()?;
+        let line = editor.readline_with_initial(prompt, (initial, ""))?;
+        return Ok(line.trim().to_string());
+    }
+
     print!("{prompt}");
     io::stdout().flush()?;
     let mut buf = String::new();
-    io::stdin().read_line(&mut buf)?;
-    Ok(buf.trim().to_string())
+    let bytes_read = io::stdin().read_line(&mut buf)?;
+    if bytes_read == 0 {
+        return Err("unexpected end of input while waiting for a line".into());
+    }
+    let buf = buf.trim();
+    Ok(if buf.is_empty() { initial.to_string() } else { buf.to_string() })
 }
 
 /// Syllable count and per-word breakdown for one candidate haiku line.
@@ -94,10 +109,11 @@ fn resolve_line(
     initial: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut candidate = initial;
+    let mut prefill = String::new();
     loop {
         let line = match candidate.take() {
             Some(line) => line,
-            None => read_line_prompt(&format!("{number}> "))?,
+            None => read_line_prompt(&format!("{number}> "), &prefill)?,
         };
         let trimmed = line.trim();
         let check = check_line(trimmed, target);
@@ -110,6 +126,7 @@ fn resolve_line(
             return Ok(trimmed.to_string());
         }
 
+        prefill = trimmed.to_string();
         if trimmed.is_empty() {
             println!("  line {number} needs {target} syllables, got none — try again:");
         } else {
@@ -117,7 +134,7 @@ fn resolve_line(
                 "  {}/{} syllables (need {}): {}",
                 check.count, check.target, check.target, check.breakdown
             );
-            println!("  try again:");
+            println!("  try again (edit the line below):");
         }
     }
 }
