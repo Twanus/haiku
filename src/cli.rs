@@ -22,10 +22,13 @@ enum Command {
     /// Create a haiku from three lines and save it
     New {
         /// First line (5 syllables). Prompts if omitted.
+        #[arg(allow_hyphen_values = true)]
         line1: Option<String>,
         /// Second line (7 syllables). Prompts if omitted.
+        #[arg(allow_hyphen_values = true)]
         line2: Option<String>,
         /// Third line (5 syllables). Prompts if omitted.
+        #[arg(allow_hyphen_values = true)]
         line3: Option<String>,
         /// Validate but do not save
         #[arg(long)]
@@ -34,7 +37,7 @@ enum Command {
     /// Check whether text is a 5-7-5 haiku
     Check {
         /// Haiku text. Reads stdin if omitted and --file is not set.
-        #[arg(conflicts_with = "file")]
+        #[arg(conflicts_with = "file", allow_hyphen_values = true)]
         text: Option<String>,
         /// Read haiku text from a file
         #[arg(long, value_name = "PATH")]
@@ -59,21 +62,23 @@ fn resolve_new_lines(
     line2: Option<String>,
     line3: Option<String>,
 ) -> Result<(String, String, String), Box<dyn std::error::Error>> {
-    let interactive = line1.is_none() && line2.is_none() && line3.is_none();
-    if interactive {
+    if line1.is_none() && line2.is_none() && line3.is_none() {
         println!("Enter three lines (5-7-5):");
-        let line1 = read_line_prompt("1> ")?;
-        let line2 = read_line_prompt("2> ")?;
-        let line3 = read_line_prompt("3> ")?;
-        return Ok((line1, line2, line3));
     }
 
-    match (line1, line2, line3) {
-        (Some(a), Some(b), Some(c)) => Ok((a, b, c)),
-        _ => Err(
-            "provide all three lines, or omit all three to enter them interactively".into(),
-        ),
-    }
+    let line1 = match line1 {
+        Some(line) => line,
+        None => read_line_prompt("1> ")?,
+    };
+    let line2 = match line2 {
+        Some(line) => line,
+        None => read_line_prompt("2> ")?,
+    };
+    let line3 = match line3 {
+        Some(line) => line,
+        None => read_line_prompt("3> ")?,
+    };
+    Ok((line1, line2, line3))
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -97,7 +102,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Check { text, file } => {
             let body = if let Some(path) = file {
-                std::fs::read_to_string(path)?
+                std::fs::read_to_string(&path).map_err(|err| {
+                    format!("couldn't read {}: {err}", path.display())
+                })?
             } else if let Some(text) = text {
                 text
             } else {
