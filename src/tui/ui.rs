@@ -35,8 +35,28 @@ fn draw_browse(frame: &mut Frame, browse: &BrowseState) {
 
     let cols = Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)]).split(rows[1]);
 
-    let items: Vec<ListItem> = browse
-        .matches
+    // `matches` can hold every entry in the store (177k+) when the search is
+    // empty. ratatui's `List` only *paints* the visible rows, but building a
+    // `ListItem` (with its `format!` allocation) is O(n) regardless of how
+    // many are ever shown — with a large enough store that cost alone made
+    // every redraw (so every arrow-key press) noticeably slow. Only format
+    // a window around the selection, sized to what the list area can
+    // actually show, so the per-frame cost stays O(visible rows) no matter
+    // how large `matches` gets.
+    let list_area = cols[0];
+    let visible_height = list_area.height.saturating_sub(2) as usize; // minus top/bottom border
+    let total = browse.matches.len();
+    let start = if total <= visible_height {
+        0
+    } else {
+        browse
+            .selected
+            .saturating_sub(visible_height / 2)
+            .min(total - visible_height)
+    };
+    let end = (start + visible_height).min(total);
+
+    let items: Vec<ListItem> = browse.matches[start..end]
         .iter()
         .map(|&i| {
             let haiku = &browse.all[i];
@@ -55,9 +75,11 @@ fn draw_browse(frame: &mut Frame, browse: &BrowseState) {
         .highlight_style(theme::accent().add_modifier(Modifier::REVERSED));
     let mut list_state = ListState::default();
     if !browse.matches.is_empty() {
-        list_state.select(Some(browse.selected));
+        // `items` is already just the visible window, so the selection
+        // index needs to be relative to `start`, not to the full list.
+        list_state.select(Some(browse.selected - start));
     }
-    frame.render_stateful_widget(list, cols[0], &mut list_state);
+    frame.render_stateful_widget(list, list_area, &mut list_state);
 
     let preview = match browse.selected_haiku() {
         Some(haiku) => {
