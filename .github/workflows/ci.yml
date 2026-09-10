@@ -1,3 +1,17 @@
+# Pipeline shape:
+#
+#   test ─┐
+#   audit ─┼─→ build-release ─→ promote ─→ release
+#   lint ──┘
+#
+# test/audit/lint gate everything and run on every push, PR, and the
+# weekly schedule. build-release (which is also where a Windows-only
+# compile failure would first show up, since test only builds on Linux)
+# runs next so main is never promoted past a commit that can't actually
+# be released. promote fast-forwards main, then release publishes the
+# binaries build-release already produced. The last three jobs only run
+# for a push to dev (or a manual dispatch against dev) — never for main
+# or a pull request.
 name: ci
 
 on:
@@ -15,30 +29,104 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Safe to cancel a superseded PR run mid-flight (it's just tests). Never
+  # cancel a push-triggered run in flight instead: that pipeline can reach
+  # promote/release, and cutting one of those off partway through is worse
+  # than letting it finish and simply queuing the next one behind it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test
-      - run: cargo build --release
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Run test suite
+        run: cargo test --locked
 
   audit:
+    name: Security audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@cargo-audit
-      - run: cargo audit
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+      - name: Audit dependencies against RustSec
+        run: cargo audit
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+  build-release:
+    name: Build release binaries
+    if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [test, audit, lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: haiku-x86_64-unknown-linux-gnu
+            src: haiku
+          - os: windows-latest
+            artifact: haiku-x86_64-pc-windows-msvc.exe
+            src: haiku.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Build release binary
+        run: cargo build --release --locked
+      - name: Package binary
+        shell: bash
+        run: |
+          src="target/release/${{ matrix.src }}"
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            strip "$src"
+          fi
+          mv "$src" "${{ matrix.artifact }}"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
 
   promote:
+    name: Promote to main
     if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [test, audit]
+    needs: [build-release]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout (with promote deploy key)
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ssh-key: ${{ secrets.PROMOTE_SSH_KEY }}
@@ -52,50 +140,21 @@ jobs:
           fi
           git push origin HEAD:refs/heads/main
 
-  build-release:
-    if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [promote]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact: haiku-x86_64-unknown-linux-gnu
-            src: haiku
-          - os: windows-latest
-            artifact: haiku-x86_64-pc-windows-msvc.exe
-            src: haiku.exe
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release
-      - name: Package binary
-        shell: bash
-        run: |
-          src="target/release/${{ matrix.src }}"
-          if [ "${{ runner.os }}" != "Windows" ]; then
-            strip "$src"
-          fi
-          mv "$src" "${{ matrix.artifact }}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
-
   release:
+    name: Publish release
     if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [build-release]
+    needs: [promote, build-release]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-      - uses: softprops/action-gh-release@v3
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: latest
           name: latest
@@ -105,7 +164,7 @@ jobs:
           make_latest: true
           fail_on_unmatched_files: true
           body: |
-            Binaries from `${{ github.sha }}`, published after tests and cargo audit passed on `dev`.
+            Binaries from `${{ github.sha }}`, published after tests, cargo audit, and clippy passed on `dev`.
 
             - `haiku-x86_64-unknown-linux-gnu` — Linux
             - `haiku-x86_64-pc-windows-msvc.exe` — Windows
