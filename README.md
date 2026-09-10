@@ -59,7 +59,9 @@ That is the shape used by e.g. [github.com/remy/haiku](https://github.com/remy/h
 
 ## CI
 
-Every push to `main` or `dev`, and every pull request, runs GitHub Actions:
+Land work on `dev`. `main` is ruleset-protected: direct pushes and PR merges are blocked. A green CI run on `dev` is the only way it moves.
+
+Every push to `dev` or `main`, and every pull request, runs GitHub Actions:
 
 | Job | What it does |
 | --- | --- |
