@@ -38,14 +38,18 @@ haiku list
 haiku random
 haiku import haikus.json     # bulk-load from a JSON array of raw haiku text
 haiku import haikus.json --dry-run
-haiku                        # no args: interactive menu for all of the above
+haiku                        # no args: full-screen TUI (browse & compose)
 ```
 
 Saved haikus live in the platform data directory (`~/.local/share/haiku/haikus.json` on Linux). Writes are atomic and the store is locked; truncated JSON is refused rather than silently wiping the collection.
 
-## Interactive mode
+## TUI
 
-Run `haiku` with no arguments for a menu-driven session. Pick an action by number, letter, or name (`1`/`n`/`new`, `2`/`c`/`check`, `3`/`l`/`list`, `4`/`r`/`random`, `5`/`i`/`import`, `6`/`q`/`quit`). It loops back to the menu after each one until you quit.
+Run `haiku` with no arguments for a full-screen interface with two screens, `Tab` to switch between them:
+
+- **Browse** — type to substring-filter your saved haikus (case-insensitive, live), `↑`/`↓`/`PageUp`/`PageDown`/`Home`/`End` to move through matches, and a preview pane shows the selected haiku with its syllable counts. `Esc` clears the search first, then quits on an empty one.
+- **Compose** — write a new haiku across three fields with the same live 5-7-5 feedback as `haiku new`. `Enter` advances to the next line once it hits its target syllable count; `Up`/`Shift+Tab` goes back to re-edit a previous line. `Ctrl+S` (or `Enter` on a completed third line) saves — it shows up in Browse immediately, no restart needed.
+- `Ctrl+C` quits from either screen.
 
 ## Import format
 
@@ -65,7 +69,7 @@ Every push to `dev` or `main`, and every pull request, runs GitHub Actions:
 
 | Job | What it does |
 | --- | --- |
-| **test** | `cargo test` — unit tests for syllable counting, 5-7-5 parsing, store persistence (atomic writes, locking, corrupt JSON), import, and CLI helpers, plus end-to-end tests of the compiled binary (`check`, `new`, `list`, `random`, `import`). Then `cargo build --release`. |
+| **test** | `cargo test` — unit tests for syllable counting, 5-7-5 parsing, store persistence (atomic writes, locking, corrupt JSON), import, CLI helpers, and the TUI's state/key-handling (terminal-independent by design, so it's testable without a real TTY), plus end-to-end tests of the compiled binary (`check`, `new`, `list`, `random`, `import`). Then `cargo build --release`. |
 | **audit** | `cargo audit` against the [RustSec](https://rustsec.org/) advisory database, so a known-vulnerable crate in `Cargo.lock` fails the build. Also runs weekly, even when dependencies have not changed. |
 | **promote** | If both jobs are green on `dev`, fast-forwards `main` to that commit. |
 

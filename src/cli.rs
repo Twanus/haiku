@@ -5,9 +5,9 @@ use clap::{Parser, Subcommand};
 
 use crate::haiku::Haiku;
 use crate::import;
+use crate::line_check::{check_line, LineCheck};
 use crate::store;
 use crate::style;
-use crate::syllables;
 
 #[derive(Parser)]
 #[command(
@@ -16,7 +16,7 @@ use crate::syllables;
     version
 )]
 struct Cli {
-    /// Enter interactive mode if no subcommand is given.
+    /// Launch the TUI if no subcommand is given.
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -86,34 +86,6 @@ fn read_line_prompt(prompt: &str, initial: &str) -> Result<String, Box<dyn std::
     } else {
         buf.to_string()
     })
-}
-
-/// Syllable count and per-word breakdown for one candidate haiku line.
-struct LineCheck {
-    count: u32,
-    target: u32,
-    breakdown: String,
-}
-
-impl LineCheck {
-    fn is_ok(&self) -> bool {
-        self.count == self.target
-    }
-}
-
-fn check_line(line: &str, target: u32) -> LineCheck {
-    let mut count = 0u32;
-    let mut parts = Vec::new();
-    for word in line.split_whitespace() {
-        let n = syllables::count(word);
-        count += n;
-        parts.push(format!("{word}({n})"));
-    }
-    LineCheck {
-        count,
-        target,
-        breakdown: parts.join(" "),
-    }
 }
 
 fn format_ok_feedback(check: &LineCheck) -> String {
@@ -313,183 +285,6 @@ fn cmd_import(path: PathBuf, dry_run: bool) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MenuAction {
-    New,
-    Check,
-    List,
-    Random,
-    Import,
-    Quit,
-}
-
-struct MenuItem {
-    key: &'static str,
-    name: &'static str,
-    desc: &'static str,
-    action: MenuAction,
-}
-
-const MENU_ITEMS: [MenuItem; 6] = [
-    MenuItem {
-        key: "1",
-        name: "new",
-        desc: "compose a haiku and save it",
-        action: MenuAction::New,
-    },
-    MenuItem {
-        key: "2",
-        name: "check",
-        desc: "compose a haiku, just validate it",
-        action: MenuAction::Check,
-    },
-    MenuItem {
-        key: "3",
-        name: "list",
-        desc: "show your saved haikus",
-        action: MenuAction::List,
-    },
-    MenuItem {
-        key: "4",
-        name: "random",
-        desc: "surprise me",
-        action: MenuAction::Random,
-    },
-    MenuItem {
-        key: "5",
-        name: "import",
-        desc: "load haikus from a JSON file",
-        action: MenuAction::Import,
-    },
-    MenuItem {
-        key: "6",
-        name: "quit",
-        desc: "leave",
-        action: MenuAction::Quit,
-    },
-];
-
-/// Match a typed menu choice against each item's number, first letter, or
-/// full name (e.g. `2`, `c`, and `check` all select the same action).
-fn parse_choice(input: &str) -> Option<MenuAction> {
-    let input = input.trim().to_ascii_lowercase();
-    MENU_ITEMS
-        .iter()
-        .find(|item| input == item.key || input == item.name || input == item.name[..1])
-        .map(|item| item.action)
-        .or(if input == "exit" {
-            Some(MenuAction::Quit)
-        } else {
-            None
-        })
-}
-
-fn print_menu() {
-    println!(
-        "{} {}",
-        style::accent(style::FLOWER),
-        style::accent("haiku — interactive mode")
-    );
-    for item in &MENU_ITEMS {
-        println!(
-            "  {} {} {:<8} {}",
-            style::accent(item.key),
-            style::muted(style::DOT),
-            style::fg(item.name),
-            style::muted(item.desc)
-        );
-    }
-}
-
-/// Read one line for the interactive menu. Returns `Ok(None)` when input
-/// has run out (EOF) or the user interrupted (Ctrl-C/Ctrl-D) — callers treat
-/// that as "back out of the current prompt" rather than an error, since
-/// giving up at a menu is a normal way to leave, not a failure.
-fn read_menu_line(prompt: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    if io::stdin().is_terminal() {
-        let mut editor = rustyline::DefaultEditor::new()?;
-        return match editor.readline(prompt) {
-            Ok(line) => Ok(Some(line.trim().to_string())),
-            Err(rustyline::error::ReadlineError::Interrupted)
-            | Err(rustyline::error::ReadlineError::Eof) => Ok(None),
-            Err(e) => Err(e.into()),
-        };
-    }
-
-    print!("{prompt}");
-    io::stdout().flush()?;
-    let mut buf = String::new();
-    let bytes_read = io::stdin().read_line(&mut buf)?;
-    if bytes_read == 0 {
-        return Ok(None);
-    }
-    Ok(Some(buf.trim().to_string()))
-}
-
-fn print_goodbye() {
-    println!(
-        "{} {}",
-        style::accent(style::FLOWER),
-        style::muted("goodbye")
-    );
-}
-
-fn cmd_import_interactive() -> Result<(), Box<dyn std::error::Error>> {
-    let prompt = format!(
-        "{} {} ",
-        style::accent(style::FLOWER),
-        style::muted("file path:")
-    );
-    let Some(path) = read_menu_line(&prompt)? else {
-        return Ok(());
-    };
-    if path.is_empty() {
-        return Ok(());
-    }
-    cmd_import(PathBuf::from(path), false)
-}
-
-fn run_interactive() -> Result<(), Box<dyn std::error::Error>> {
-    print_menu();
-    let prompt = format!("{} ", style::accent(style::PROMPT));
-    loop {
-        let Some(input) = read_menu_line(&prompt)? else {
-            print_goodbye();
-            return Ok(());
-        };
-        if input.is_empty() {
-            continue;
-        }
-
-        let result = match parse_choice(&input) {
-            Some(MenuAction::New) => cmd_new(None, None, None, false),
-            Some(MenuAction::Check) => cmd_new(None, None, None, true),
-            Some(MenuAction::List) => cmd_list(),
-            Some(MenuAction::Random) => cmd_random(),
-            Some(MenuAction::Import) => cmd_import_interactive(),
-            Some(MenuAction::Quit) => {
-                print_goodbye();
-                return Ok(());
-            }
-            None => {
-                println!(
-                    "{} {}",
-                    style::error(style::BAD),
-                    style::muted("not a valid choice — try a number 1-6, or a name")
-                );
-                Ok(())
-            }
-        };
-
-        if let Err(err) = result {
-            println!("{} {}", style::error(style::BAD), style::error(&err.to_string()));
-        }
-
-        println!();
-        print_menu();
-    }
-}
-
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
@@ -503,77 +298,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some(Command::List) => cmd_list()?,
         Some(Command::Random) => cmd_random()?,
         Some(Command::Import { path, dry_run }) => cmd_import(path, dry_run)?,
-        None => run_interactive()?,
+        None => crate::tui::run()?,
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_choice_accepts_numbers_letters_and_names() {
-        for input in ["1", "n", "new"] {
-            assert_eq!(parse_choice(input), Some(MenuAction::New), "{input}");
-        }
-        for input in ["2", "c", "check"] {
-            assert_eq!(parse_choice(input), Some(MenuAction::Check), "{input}");
-        }
-        for input in ["3", "l", "list"] {
-            assert_eq!(parse_choice(input), Some(MenuAction::List), "{input}");
-        }
-        for input in ["4", "r", "random"] {
-            assert_eq!(parse_choice(input), Some(MenuAction::Random), "{input}");
-        }
-        for input in ["5", "i", "import"] {
-            assert_eq!(parse_choice(input), Some(MenuAction::Import), "{input}");
-        }
-        for input in ["6", "q", "quit", "exit"] {
-            assert_eq!(parse_choice(input), Some(MenuAction::Quit), "{input}");
-        }
-    }
-
-    #[test]
-    fn parse_choice_is_case_insensitive_and_trims_whitespace() {
-        assert_eq!(parse_choice("  NEW  "), Some(MenuAction::New));
-        assert_eq!(parse_choice("Q"), Some(MenuAction::Quit));
-    }
-
-    #[test]
-    fn parse_choice_rejects_unknown_input() {
-        assert_eq!(parse_choice("bogus"), None);
-        assert_eq!(parse_choice(""), None);
-        assert_eq!(parse_choice("7"), None);
-    }
-
-    #[test]
-    fn check_line_reports_matching_count_and_breakdown() {
-        let check = check_line("an old silent pond", 5);
-        assert!(check.is_ok());
-        assert_eq!(check.count, 5);
-        assert_eq!(check.breakdown, "an(1) old(1) silent(2) pond(1)");
-    }
-
-    #[test]
-    fn check_line_flags_too_few_syllables() {
-        let check = check_line("an old silent", 5);
-        assert!(!check.is_ok());
-        assert_eq!(check.count, 4);
-    }
-
-    #[test]
-    fn check_line_flags_too_many_syllables() {
-        let check = check_line("a frog jumps into the pond and splashes", 7);
-        assert!(!check.is_ok());
-        assert!(check.count > 7);
-    }
-
-    #[test]
-    fn check_line_empty_line_is_not_ok() {
-        let check = check_line("", 5);
-        assert!(!check.is_ok());
-        assert_eq!(check.count, 0);
-        assert_eq!(check.breakdown, "");
-    }
 }
