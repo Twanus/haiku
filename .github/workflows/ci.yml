@@ -37,12 +37,11 @@ jobs:
     if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [test, audit]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          ssh-key: ${{ secrets.PROMOTE_SSH_KEY }}
       - name: Fast-forward main to this green commit
         run: |
           git fetch origin main
