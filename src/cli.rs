@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 
 use crate::haiku::Haiku;
 use crate::store;
+use crate::style;
 use crate::syllables;
 
 #[derive(Parser)]
@@ -70,7 +71,11 @@ fn read_line_prompt(prompt: &str, initial: &str) -> Result<String, Box<dyn std::
         return Err("unexpected end of input while waiting for a line".into());
     }
     let buf = buf.trim();
-    Ok(if buf.is_empty() { initial.to_string() } else { buf.to_string() })
+    Ok(if buf.is_empty() {
+        initial.to_string()
+    } else {
+        buf.to_string()
+    })
 }
 
 /// Syllable count and per-word breakdown for one candidate haiku line.
@@ -101,6 +106,37 @@ fn check_line(line: &str, target: u32) -> LineCheck {
     }
 }
 
+fn format_ok_feedback(check: &LineCheck) -> String {
+    format!(
+        "  {} {}/{} syllables: {}",
+        style::success(style::OK),
+        style::success(&check.count.to_string()),
+        check.target,
+        style::muted(&check.breakdown)
+    )
+}
+
+fn format_bad_feedback(check: &LineCheck, number: usize) -> String {
+    if check.breakdown.is_empty() {
+        format!(
+            "  {} line {number} needs {} syllables, got none {}",
+            style::error(style::BAD),
+            style::warn(&check.target.to_string()),
+            style::muted("— try again:")
+        )
+    } else {
+        format!(
+            "  {} {}/{} syllables (need {}): {}\n  {}",
+            style::error(style::BAD),
+            style::warn(&check.count.to_string()),
+            check.target,
+            check.target,
+            style::muted(&check.breakdown),
+            style::muted("try again (edit the line below):")
+        )
+    }
+}
+
 /// Read one line (or use `initial`, if given), report its syllable count,
 /// and keep re-prompting until it hits `target` syllables.
 fn resolve_line(
@@ -110,32 +146,26 @@ fn resolve_line(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut candidate = initial;
     let mut prefill = String::new();
+    let prompt = format!(
+        "{}{} ",
+        style::accent(&format!("{number}")),
+        style::accent(style::PROMPT)
+    );
     loop {
         let line = match candidate.take() {
             Some(line) => line,
-            None => read_line_prompt(&format!("{number}> "), &prefill)?,
+            None => read_line_prompt(&prompt, &prefill)?,
         };
         let trimmed = line.trim();
         let check = check_line(trimmed, target);
 
         if check.is_ok() {
-            println!(
-                "  {}/{} syllables: {}",
-                check.count, check.target, check.breakdown
-            );
+            println!("{}", format_ok_feedback(&check));
             return Ok(trimmed.to_string());
         }
 
         prefill = trimmed.to_string();
-        if trimmed.is_empty() {
-            println!("  line {number} needs {target} syllables, got none — try again:");
-        } else {
-            println!(
-                "  {}/{} syllables (need {}): {}",
-                check.count, check.target, check.target, check.breakdown
-            );
-            println!("  try again (edit the line below):");
-        }
+        println!("{}", format_bad_feedback(&check, number));
     }
 }
 
@@ -145,13 +175,27 @@ fn resolve_new_lines(
     line3: Option<String>,
 ) -> Result<(String, String, String), Box<dyn std::error::Error>> {
     if line1.is_none() && line2.is_none() && line3.is_none() {
-        println!("Enter three lines (5-7-5). I'll tell you the syllable count and let you fix any line that's off.");
+        println!(
+            "{} Enter three lines (5-7-5). I'll show syllable counts and let you fix any line that's off.",
+            style::accent(style::FLOWER)
+        );
     }
 
     let line1 = resolve_line(1, 5, line1)?;
     let line2 = resolve_line(2, 7, line2)?;
     let line3 = resolve_line(3, 5, line3)?;
     Ok((line1, line2, line3))
+}
+
+fn print_haiku_block(haiku: &Haiku) {
+    for (i, line) in haiku.lines.iter().enumerate() {
+        let mark = if i == 1 {
+            style::accent(style::DOT)
+        } else {
+            style::muted(style::DOT)
+        };
+        println!("  {mark} {}", style::fg(line));
+    }
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -166,11 +210,21 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             let (line1, line2, line3) = resolve_new_lines(line1, line2, line3)?;
             let haiku = Haiku::new(line1, line2, line3)?;
             if dry_run {
-                println!("{haiku}");
+                println!(
+                    "{} {}",
+                    style::success(style::OK),
+                    style::muted("looks good")
+                );
+                print_haiku_block(&haiku);
             } else {
-                let rendered = haiku.to_string();
+                let rendered = haiku.clone();
                 store::save(haiku)?;
-                println!("saved:\n{rendered}");
+                println!(
+                    "{} {}",
+                    style::success(style::OK),
+                    style::success("saved")
+                );
+                print_haiku_block(&rendered);
             }
         }
         Command::Check { text, file } => {
@@ -185,27 +239,47 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
             let haiku = Haiku::parse(&body)?;
             let [a, b, c] = haiku.syllable_counts();
-            println!("{haiku}");
-            println!("{a}-{b}-{c} ok");
+            print_haiku_block(&haiku);
+            println!(
+                "{} {}-{}-{} ok",
+                style::success(style::OK),
+                style::success(&a.to_string()),
+                style::success(&b.to_string()),
+                style::success(&c.to_string())
+            );
         }
         Command::List => {
             let all = store::list()?;
             if all.is_empty() {
-                println!("no haikus saved yet");
+                println!(
+                    "{} {}",
+                    style::muted(style::FLOWER),
+                    style::muted("no haikus saved yet")
+                );
             } else {
                 for (i, haiku) in all.iter().enumerate() {
                     if i > 0 {
                         println!();
                     }
                     let [a, b, c] = haiku.syllable_counts();
-                    println!("{}. ({a}-{b}-{c})", i + 1);
-                    println!("{haiku}");
+                    println!(
+                        "{} {} {}",
+                        style::accent(&format!("{}.", i + 1)),
+                        style::cyan(&format!("({a}-{b}-{c})")),
+                        style::muted(style::FLOWER)
+                    );
+                    print_haiku_block(haiku);
                 }
             }
         }
         Command::Random => {
             let haiku = store::random()?;
-            println!("{haiku}");
+            println!(
+                "{} {}",
+                style::accent(style::FLOWER),
+                style::muted("a random haiku")
+            );
+            print_haiku_block(&haiku);
         }
     }
     Ok(())
