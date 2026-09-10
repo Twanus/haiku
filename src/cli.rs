@@ -300,16 +300,15 @@ fn cmd_import(path: PathBuf, dry_run: bool) -> Result<(), Box<dyn std::error::Er
         .map_err(|err| format!("couldn't read {}: {err}", path.display()))?;
     let report = import::parse(&body)?;
     let count = report.imported.len();
-    if !dry_run {
-        for haiku in &report.imported {
-            store::save(haiku.clone())?;
-        }
+    let skipped = report.skipped.len();
+    if !dry_run && count > 0 {
+        store::save_all(report.imported)?;
     }
     println!(
         "{} imported {}, skipped {}",
         style::success(style::OK),
         style::success(&count.to_string()),
-        style::warn(&report.skipped.len().to_string())
+        style::warn(&skipped.to_string())
     );
     Ok(())
 }

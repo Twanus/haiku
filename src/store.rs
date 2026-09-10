@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -67,6 +68,13 @@ pub fn save(haiku: Haiku) -> Result<(), StoreError> {
     save_in(&dir()?, haiku)
 }
 
+/// Save many haikus in one read-modify-write, instead of one per haiku —
+/// each save re-reads and re-serializes the whole store, so saving N haikus
+/// one at a time is O(N^2) against an already-large store.
+pub fn save_all(haikus: Vec<Haiku>) -> Result<(), StoreError> {
+    save_all_in(&dir()?, haikus)
+}
+
 pub fn random() -> Result<Haiku, StoreError> {
     random_in(&dir()?)
 }
@@ -81,9 +89,21 @@ fn list_in(dir: &Path) -> Result<Vec<Haiku>, StoreError> {
 }
 
 fn save_in(dir: &Path, haiku: Haiku) -> Result<(), StoreError> {
+    save_all_in(dir, vec![haiku])
+}
+
+/// Save haikus, skipping any that already match one already in the store
+/// (or a duplicate within `haikus` itself) — checked via a `HashSet` so
+/// dedup stays O(1) per haiku instead of an O(n) scan per lookup.
+fn save_all_in(dir: &Path, haikus: Vec<Haiku>) -> Result<(), StoreError> {
     let _lock = acquire_lock(dir)?;
     let mut all = list_in(dir)?;
-    all.push(haiku);
+    let mut seen: HashSet<Haiku> = all.iter().cloned().collect();
+    for haiku in haikus {
+        if seen.insert(haiku.clone()) {
+            all.push(haiku);
+        }
+    }
     let path = dir.join("haikus.json");
     let body = serde_json::to_string_pretty(&all).map_err(|source| StoreError::Json {
         path: path.clone(),
@@ -139,6 +159,44 @@ mod tests {
 
         let all = list_in(tmp.path()).unwrap();
         assert_eq!(all, vec![haiku(1), haiku(2)]);
+    }
+
+    #[test]
+    fn save_all_skips_duplicates_already_in_the_store() {
+        let tmp = tempfile::tempdir().unwrap();
+        save_in(tmp.path(), haiku(1)).unwrap();
+        save_all_in(tmp.path(), vec![haiku(1), haiku(2)]).unwrap();
+        assert_eq!(list_in(tmp.path()).unwrap(), vec![haiku(1), haiku(2)]);
+    }
+
+    #[test]
+    fn save_all_skips_duplicates_within_the_same_batch() {
+        let tmp = tempfile::tempdir().unwrap();
+        save_all_in(tmp.path(), vec![haiku(1), haiku(1), haiku(2)]).unwrap();
+        assert_eq!(list_in(tmp.path()).unwrap(), vec![haiku(1), haiku(2)]);
+    }
+
+    #[test]
+    fn save_all_saves_every_haiku_in_one_batch() {
+        let tmp = tempfile::tempdir().unwrap();
+        save_all_in(tmp.path(), vec![haiku(1), haiku(2)]).unwrap();
+        assert_eq!(list_in(tmp.path()).unwrap(), vec![haiku(1), haiku(2)]);
+    }
+
+    #[test]
+    fn save_all_appends_to_existing_haikus() {
+        let tmp = tempfile::tempdir().unwrap();
+        save_in(tmp.path(), haiku(1)).unwrap();
+        save_all_in(tmp.path(), vec![haiku(2)]).unwrap();
+        assert_eq!(list_in(tmp.path()).unwrap(), vec![haiku(1), haiku(2)]);
+    }
+
+    #[test]
+    fn save_all_with_empty_vec_is_a_noop_write() {
+        let tmp = tempfile::tempdir().unwrap();
+        save_in(tmp.path(), haiku(1)).unwrap();
+        save_all_in(tmp.path(), Vec::new()).unwrap();
+        assert_eq!(list_in(tmp.path()).unwrap(), vec![haiku(1)]);
     }
 
     #[test]
