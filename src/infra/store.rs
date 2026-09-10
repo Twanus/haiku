@@ -43,8 +43,11 @@ fn dir() -> Result<PathBuf, StoreError> {
 fn acquire_lock(dir: &Path) -> Result<File, StoreError> {
     fs::create_dir_all(dir).map_err(|e| io_err(dir, e))?;
     let lock_path = dir.join("haikus.lock");
+    // Only ever used as an flock() target, never read or written — leave
+    // any existing content alone rather than truncating it.
     let file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(&lock_path)
@@ -228,9 +231,6 @@ mod tests {
     fn list_on_corrupt_json_is_err_json() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("haikus.json"), "not json").unwrap();
-        assert!(matches!(
-            list_in(tmp.path()),
-            Err(StoreError::Json { .. })
-        ));
+        assert!(matches!(list_in(tmp.path()), Err(StoreError::Json { .. })));
     }
 }

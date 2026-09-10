@@ -10,11 +10,7 @@ use crate::infra::store;
 use crate::infra::style;
 
 #[derive(Parser)]
-#[command(
-    name = "haiku",
-    about = "Write, check, and collect haikus",
-    version
-)]
+#[command(name = "haiku", about = "Write, check, and collect haikus", version)]
 struct Cli {
     /// Launch the TUI if no subcommand is given.
     #[command(subcommand)]
@@ -198,17 +194,16 @@ fn cmd_new(
     } else {
         let rendered = haiku.clone();
         store::save(haiku)?;
-        println!(
-            "{} {}",
-            style::success(style::OK),
-            style::success("saved")
-        );
+        println!("{} {}", style::success(style::OK), style::success("saved"));
         print_haiku_block(&rendered);
     }
     Ok(())
 }
 
-fn cmd_check(text: Option<String>, file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_check(
+    text: Option<String>,
+    file: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let body = if let Some(path) = file {
         std::fs::read_to_string(&path)
             .map_err(|err| format!("couldn't read {}: {err}", path.display()))?

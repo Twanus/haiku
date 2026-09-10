@@ -33,7 +33,8 @@ fn draw_browse(frame: &mut Frame, browse: &BrowseState) {
     let cursor_x = rows[0].x + 1 + 2 + browse.query.chars().count() as u16;
     frame.set_cursor_position((cursor_x, rows[0].y + 1));
 
-    let cols = Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)]).split(rows[1]);
+    let cols =
+        Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)]).split(rows[1]);
 
     // `matches` can hold every entry in the store (177k+) when the search is
     // empty. ratatui's `List` only *paints* the visible rows, but building a
@@ -142,7 +143,13 @@ fn draw_compose(frame: &mut Frame, compose: &ComposeState) {
         } else {
             theme::error() // attempted but still wrong
         };
-        let title = format!(" {}{} {}/{} ", i + 1, style::PROMPT, check.count, check.target);
+        let title = format!(
+            " {}{} {}/{} ",
+            i + 1,
+            style::PROMPT,
+            check.count,
+            check.target
+        );
         let block = Block::bordered().title(title).border_style(border_style);
 
         let mut lines = vec![Line::from(Span::styled(
@@ -169,9 +176,10 @@ fn draw_compose(frame: &mut Frame, compose: &ComposeState) {
             format!("{} saved", style::OK),
             theme::success(),
         )),
-        Some(ComposeStatus::Error(message)) => {
-            Line::from(Span::styled(format!("{} {message}", style::BAD), theme::error()))
-        }
+        Some(ComposeStatus::Error(message)) => Line::from(Span::styled(
+            format!("{} {message}", style::BAD),
+            theme::error(),
+        )),
         None => Line::from(Span::styled(
             "Enter advance/save  ·  Ctrl+S save  ·  Esc back  ·  Tab browse  ·  Ctrl+C quit",
             theme::muted(),
