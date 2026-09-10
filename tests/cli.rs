@@ -136,6 +136,86 @@ fn new_then_list_then_random_roundtrip() {
 }
 
 #[test]
+fn import_saves_valid_entries_and_reports_skipped() {
+    let tmp = tempfile::tempdir().unwrap();
+    let import_file = tmp.path().join("db.json");
+    std::fs::write(
+        &import_file,
+        r#"[
+            "An old silent pond\nA frog jumps into the pond\nSplash! Silence again",
+            "nope",
+            "I walked to the store\nWanted a little table\nWhole apple loved much"
+        ]"#,
+    )
+    .unwrap();
+
+    cmd(tmp.path())
+        .arg("import")
+        .arg(&import_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("imported 2"))
+        .stdout(predicate::str::contains("skipped 1"));
+
+    cmd(tmp.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("silent pond"))
+        .stdout(predicate::str::contains("little table"));
+}
+
+#[test]
+fn import_dry_run_reports_but_does_not_save() {
+    let tmp = tempfile::tempdir().unwrap();
+    let import_file = tmp.path().join("db.json");
+    std::fs::write(
+        &import_file,
+        r#"["An old silent pond\nA frog jumps into the pond\nSplash! Silence again"]"#,
+    )
+    .unwrap();
+
+    cmd(tmp.path())
+        .arg("import")
+        .arg(&import_file)
+        .arg("--dry-run")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("imported 1"));
+
+    cmd(tmp.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no haikus saved yet"));
+}
+
+#[test]
+fn import_reports_missing_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    cmd(tmp.path())
+        .arg("import")
+        .arg(tmp.path().join("does-not-exist.json"))
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("couldn't read"));
+}
+
+#[test]
+fn import_reports_malformed_json() {
+    let tmp = tempfile::tempdir().unwrap();
+    let import_file = tmp.path().join("db.json");
+    std::fs::write(&import_file, "not json").unwrap();
+
+    cmd(tmp.path())
+        .arg("import")
+        .arg(&import_file)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("JSON array"));
+}
+
+#[test]
 fn new_rejects_wrong_syllable_counts_given_as_args() {
     // With no interactive terminal and no piped follow-up input, a rejected
     // line can't be corrected, so this surfaces as an EOF error rather than

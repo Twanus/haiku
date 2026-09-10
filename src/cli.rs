@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use crate::haiku::Haiku;
+use crate::import;
 use crate::store;
 use crate::style;
 use crate::syllables;
@@ -49,6 +50,14 @@ enum Command {
     List,
     /// Print a random saved haiku
     Random,
+    /// Import haikus from a JSON array of raw haiku text
+    Import {
+        /// Path to a JSON file: an array of strings, each 3 newline-separated lines
+        path: PathBuf,
+        /// Report what would be imported without saving anything
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Read one line, pre-filling `initial` as editable text when stdin is a
@@ -280,6 +289,23 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 style::muted("a random haiku")
             );
             print_haiku_block(&haiku);
+        }
+        Command::Import { path, dry_run } => {
+            let body = std::fs::read_to_string(&path)
+                .map_err(|err| format!("couldn't read {}: {err}", path.display()))?;
+            let report = import::parse(&body)?;
+            let count = report.imported.len();
+            if !dry_run {
+                for haiku in &report.imported {
+                    store::save(haiku.clone())?;
+                }
+            }
+            println!(
+                "{} imported {}, skipped {}",
+                style::success(style::OK),
+                style::success(&count.to_string()),
+                style::warn(&report.skipped.len().to_string())
+            );
         }
     }
     Ok(())
