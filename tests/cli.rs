@@ -216,6 +216,97 @@ fn import_reports_malformed_json() {
 }
 
 #[test]
+fn interactive_mode_shows_menu_with_no_subcommand() {
+    let tmp = tempfile::tempdir().unwrap();
+    cmd(tmp.path())
+        .write_stdin("6\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("interactive mode"))
+        .stdout(predicate::str::contains("goodbye"));
+}
+
+#[test]
+fn interactive_mode_rejects_unknown_choice_then_continues() {
+    let tmp = tempfile::tempdir().unwrap();
+    cmd(tmp.path())
+        .write_stdin("bogus\n6\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("not a valid choice"));
+}
+
+#[test]
+fn interactive_mode_random_on_empty_store_reports_error_and_continues() {
+    let tmp = tempfile::tempdir().unwrap();
+    cmd(tmp.path())
+        .write_stdin("4\n6\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no haikus saved yet"))
+        .stdout(predicate::str::contains("goodbye"));
+}
+
+#[test]
+fn interactive_mode_new_composes_and_saves() {
+    let tmp = tempfile::tempdir().unwrap();
+    cmd(tmp.path())
+        .write_stdin(
+            "1\nan old silent pond\na frog jumps into the pond\nsplash silence again\n6\n",
+        )
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("saved"));
+
+    cmd(tmp.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("silent pond"));
+}
+
+#[test]
+fn interactive_mode_check_validates_without_saving() {
+    let tmp = tempfile::tempdir().unwrap();
+    cmd(tmp.path())
+        .write_stdin(
+            "check\nan old silent pond\na frog jumps into the pond\nsplash silence again\nquit\n",
+        )
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("looks good"));
+
+    cmd(tmp.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no haikus saved yet"));
+}
+
+#[test]
+fn interactive_mode_import_saves_via_file_path_prompt() {
+    let tmp = tempfile::tempdir().unwrap();
+    let import_file = tmp.path().join("db.json");
+    std::fs::write(
+        &import_file,
+        r#"["An old silent pond\nA frog jumps into the pond\nSplash! Silence again"]"#,
+    )
+    .unwrap();
+
+    cmd(tmp.path())
+        .write_stdin(format!("import\n{}\nquit\n", import_file.display()))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("imported 1"));
+
+    cmd(tmp.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("silent pond"));
+}
+
+#[test]
 fn new_rejects_wrong_syllable_counts_given_as_args() {
     // With no interactive terminal and no piped follow-up input, a rejected
     // line can't be corrected, so this surfaces as an EOF error rather than
