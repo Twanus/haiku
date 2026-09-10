@@ -1,17 +1,15 @@
 # Pipeline shape:
 #
 #   test ─┐
-#   audit ─┼─→ build-release ─→ promote ─→ release
+#   audit ─┼─→ promote
 #   lint ──┘
 #
 # test/audit/lint gate everything and run on every push, PR, and the
-# weekly schedule. build-release (which is also where a Windows-only
-# compile failure would first show up, since test only builds on Linux)
-# runs next so main is never promoted past a commit that can't actually
-# be released. promote fast-forwards main, then release publishes the
-# binaries build-release already produced. The last three jobs only run
-# for a push to dev (or a manual dispatch against dev) — never for main
-# or a pull request.
+# weekly schedule; promote fast-forwards main once all three are green.
+# This workflow never builds a release binary — that's release.yml,
+# triggered only by pushing a version tag (see its own header comment
+# for why). promote only runs for a push to dev (or a manual dispatch
+# against dev) — never for main or a pull request.
 name: ci
 
 on:
@@ -32,9 +30,9 @@ env:
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   # Safe to cancel a superseded PR run mid-flight (it's just tests). Never
-  # cancel a push-triggered run in flight instead: that pipeline can reach
-  # promote/release, and cutting one of those off partway through is worse
-  # than letting it finish and simply queuing the next one behind it.
+  # cancel a push-triggered run in flight instead: that pipeline reaches
+  # promote, and cutting it off partway through is worse than letting it
+  # finish and simply queuing the next one behind it.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -81,48 +79,10 @@ jobs:
       - name: Clippy (deny warnings)
         run: cargo clippy --all-targets --locked -- -D warnings
 
-  build-release:
-    name: Build release binaries
-    if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [test, audit, lint]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact: haiku-x86_64-unknown-linux-gnu
-            src: haiku
-          - os: windows-latest
-            artifact: haiku-x86_64-pc-windows-msvc.exe
-            src: haiku.exe
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-      - name: Build release binary
-        run: cargo build --release --locked
-      - name: Package binary
-        shell: bash
-        run: |
-          src="target/release/${{ matrix.src }}"
-          if [ "${{ runner.os }}" != "Windows" ]; then
-            strip "$src"
-          fi
-          mv "$src" "${{ matrix.artifact }}"
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
-
   promote:
     name: Promote to main
     if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [build-release]
+    needs: [test, audit, lint]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (with promote deploy key)
@@ -139,32 +99,3 @@ jobs:
             exit 1
           fi
           git push origin HEAD:refs/heads/main
-
-  release:
-    name: Publish release
-    if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [promote, build-release]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download built artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: latest
-          name: latest
-          target_commitish: ${{ github.sha }}
-          files: dist/*
-          overwrite_files: true
-          make_latest: true
-          fail_on_unmatched_files: true
-          body: |
-            Binaries from `${{ github.sha }}`, published after tests, cargo audit, and clippy passed on `dev`.
-
-            - `haiku-x86_64-unknown-linux-gnu` — Linux
-            - `haiku-x86_64-pc-windows-msvc.exe` — Windows

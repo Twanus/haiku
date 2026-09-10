@@ -1,0 +1,106 @@
+# Cuts a versioned GitHub Release. Triggered only by pushing a tag like
+# `v0.2.0` — never by a plain push to dev/main — so the expensive
+# cross-platform release build only runs when someone's actually ready to
+# ship, not on every commit. To cut a release: bump `version` in
+# Cargo.toml, commit it (let it promote to main via ci.yml as normal),
+# then `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`.
+#
+#   verify-version ─→ build (linux + windows) ─→ publish
+#
+# verify-version fails fast (before any compiling) if the pushed tag
+# doesn't match Cargo.toml's version, catching the "forgot to bump it" or
+# "tagged the wrong number" mistake for free. publish marks the release
+# `make_latest: true`, so GitHub serves /releases/latest as whichever
+# tagged version is newest — no separate rolling "latest" tag needed, and
+# every past version stays listed and downloadable.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-version:
+    name: Verify tag matches Cargo.toml version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Compare tag to Cargo.toml version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          cargo_version="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"/\1/')"
+          echo "tag version:       $tag_version"
+          echo "Cargo.toml version: $cargo_version"
+          if [ "$tag_version" != "$cargo_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME (version $tag_version) doesn't match Cargo.toml's version $cargo_version"
+            exit 1
+          fi
+
+  build:
+    name: Build release binaries
+    needs: [verify-version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: haiku-x86_64-unknown-linux-gnu
+            src: haiku
+          - os: windows-latest
+            artifact: haiku-x86_64-pc-windows-msvc.exe
+            src: haiku.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Build release binary
+        run: cargo build --release --locked
+      - name: Package binary
+        shell: bash
+        run: |
+          src="target/release/${{ matrix.src }}"
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            strip "$src"
+          fi
+          mv "$src" "${{ matrix.artifact }}"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  publish:
+    name: Publish release
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download built artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          files: dist/*
+          make_latest: true
+          fail_on_unmatched_files: true
+          body: |
+            Binaries for `${{ github.ref_name }}` (`${{ github.sha }}`), built after tests, cargo audit, and clippy passed on `dev`.
+
+            - `haiku-x86_64-unknown-linux-gnu` — Linux
+            - `haiku-x86_64-pc-windows-msvc.exe` — Windows

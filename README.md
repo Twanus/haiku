@@ -25,7 +25,7 @@ Syllable counts are a heuristic, not a linguist — good enough to catch the obv
 
 ## Install
 
-Prebuilt Linux and Windows x86_64 binaries from the latest green `dev` build: **[Releases](https://github.com/Twanus/haiku/releases/latest)**.
+Prebuilt Linux and Windows x86_64 binaries for every tagged version: **[Releases](https://github.com/Twanus/haiku/releases/latest)**.
 
 Or build it yourself:
 
@@ -108,14 +108,22 @@ Both frontends are built on the same `domain` rules and the same `infra` — not
 
 Land work on `dev`. `main` is ruleset-protected: direct pushes and PR merges are blocked, so a green CI run on `dev` is the only way it moves.
 
-Every push to `dev` or `main`, and every pull request, runs GitHub Actions:
+Every push to `dev` or `main`, and every pull request, runs `ci.yml`:
 
 | Job | What it does |
 | --- | --- |
-| **test** | `cargo test` — unit tests for syllable counting, 5-7-5 parsing, store persistence (atomic writes, locking, corrupt JSON), import, CLI helpers, and the TUI's state/key-handling (terminal-independent by design, so it's testable without a real TTY), plus end-to-end tests of the compiled binary (`check`, `new`, `list`, `random`, `import`). Then `cargo build --release`. |
+| **test** | `cargo test --locked` — unit tests for syllable counting, 5-7-5 parsing, store persistence (atomic writes, locking, corrupt JSON), import, CLI helpers, and the TUI's state/key-handling (terminal-independent by design, so it's testable without a real TTY), plus end-to-end tests of the compiled binary (`check`, `new`, `list`, `random`, `import`). |
 | **audit** | `cargo audit` against the [RustSec](https://rustsec.org/) advisory database, so a known-vulnerable crate in `Cargo.lock` fails the build. Also runs weekly, even when dependencies haven't changed. |
-| **promote** | If both jobs are green on `dev`, fast-forwards `main` to that commit. |
-| **release** | After promote, uploads Linux and Windows x86_64 binaries to the [`latest` GitHub Release](https://github.com/Twanus/haiku/releases/latest). |
+| **lint** | `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`. |
+| **promote** | If test/audit/lint are all green on `dev`, fast-forwards `main` to that commit. |
+
+Cutting an actual release is a separate, deliberate step, not something every push does: bump `version` in `Cargo.toml`, let it promote to `main` as normal, then push a matching tag (`git tag -a v0.2.0 -m "..." && git push origin v0.2.0`). That triggers `release.yml`:
+
+| Job | What it does |
+| --- | --- |
+| **verify-version** | Fails fast if the pushed tag doesn't match `Cargo.toml`'s version — catches a forgotten bump or a typo'd tag before any build runs. |
+| **build** | Builds and packages the Linux and Windows x86_64 release binaries. |
+| **publish** | Publishes them to a GitHub Release named after the tag, marked as `latest` — every past version stays listed on the [Releases page](https://github.com/Twanus/haiku/releases). |
 
 The badge at the top tracks `main`.
 
