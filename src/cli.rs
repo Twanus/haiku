@@ -3,11 +3,11 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use crate::haiku::Haiku;
-use crate::import;
-use crate::line_check::{check_line, LineCheck};
-use crate::store;
-use crate::style;
+use crate::domain::haiku::Haiku;
+use crate::domain::import;
+use crate::domain::line_check::{check_line, LineCheck};
+use crate::infra::store;
+use crate::infra::style;
 
 #[derive(Parser)]
 #[command(

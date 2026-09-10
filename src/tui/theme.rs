@@ -1,10 +1,10 @@
-//! Adapts `crate::style`'s Omarchy-aware theme colors into `ratatui` styles,
+//! Adapts `crate::infra::style`'s Omarchy-aware theme colors into `ratatui` styles,
 //! so the TUI matches the CLI's existing palette (`cmd_list`, `cmd_new`,
 //! etc.) instead of hand-rolling its own.
 
 use ratatui::style::{Color, Style};
 
-use crate::style;
+use crate::infra::style;
 
 fn to_color(rgb: owo_colors::Rgb) -> Color {
     Color::Rgb(rgb.0, rgb.1, rgb.2)

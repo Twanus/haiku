@@ -8,7 +8,7 @@
 
 use thiserror::Error;
 
-use crate::haiku::Haiku;
+use crate::domain::haiku::Haiku;
 
 #[derive(Debug, Error)]
 pub enum ImportError {

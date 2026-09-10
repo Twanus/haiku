@@ -1,11 +1,9 @@
 mod cli;
-mod haiku;
-mod import;
-mod line_check;
-mod store;
-mod style;
-mod syllables;
+mod domain;
+mod infra;
 mod tui;
+
+use infra::style;
 
 fn main() {
     if let Err(err) = cli::run() {

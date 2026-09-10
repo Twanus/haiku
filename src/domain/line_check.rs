@@ -1,4 +1,4 @@
-use crate::syllables;
+use crate::domain::syllables;
 
 /// Syllable count and per-word breakdown for one candidate haiku line.
 pub struct LineCheck {

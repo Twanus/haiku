@@ -5,7 +5,7 @@
 
 use crossterm::event::{self, Event};
 
-use crate::store;
+use crate::infra::store;
 
 mod app;
 mod theme;

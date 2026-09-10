@@ -9,8 +9,8 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use crate::haiku::Haiku;
-use crate::line_check::{check_line, LineCheck};
+use crate::domain::haiku::Haiku;
+use crate::domain::line_check::{check_line, LineCheck};
 
 const TARGETS: [u32; 3] = [5, 7, 5];
 

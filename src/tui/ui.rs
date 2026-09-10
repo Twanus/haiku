@@ -8,7 +8,7 @@ use ratatui::Frame;
 
 use super::app::{App, BrowseState, ComposeState, ComposeStatus, Screen};
 use super::theme;
-use crate::style;
+use crate::infra::style;
 
 pub fn draw(frame: &mut Frame, app: &App) {
     match app.screen {

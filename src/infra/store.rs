@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use crate::haiku::Haiku;
+use crate::domain::haiku::Haiku;
 
 #[derive(Debug, Error)]
 pub enum StoreError {
