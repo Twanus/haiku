@@ -41,5 +41,14 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Fast-forward main to this green commit
-        run: git push origin HEAD:refs/heads/main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            echo "main has commits not in this green dev commit; refusing a non-fast-forward promote"
+            git log --oneline HEAD..origin/main
+            exit 1
+          fi
+          git push origin HEAD:refs/heads/main
