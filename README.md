@@ -1,6 +1,7 @@
 # haiku
 
 [![CI](https://github.com/Twanus/haiku/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Twanus/haiku/actions/workflows/ci.yml?query=branch%3Amain)
+[![release](https://img.shields.io/github/v/release/Twanus/haiku)](https://github.com/Twanus/haiku/releases/latest)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ```
