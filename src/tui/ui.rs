@@ -74,7 +74,7 @@ fn draw_browse(frame: &mut Frame, browse: &BrowseState) {
         )))
         .highlight_style(theme::accent().add_modifier(Modifier::REVERSED));
     let mut list_state = ListState::default();
-    if !browse.matches.is_empty() {
+    if end > start {
         // `items` is already just the visible window, so the selection
         // index needs to be relative to `start`, not to the full list.
         list_state.select(Some(browse.selected - start));

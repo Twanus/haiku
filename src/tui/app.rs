@@ -77,37 +77,72 @@ impl App {
     /// (so it's visible without restarting), clear the compose draft, and
     /// leave a transient "saved" status for the compose screen to show.
     pub fn record_saved_haiku(&mut self, haiku: Haiku) {
-        self.browse.all.push(haiku);
-        self.browse.recompute_matches();
+        self.browse.push_new_haiku(haiku);
         self.compose = ComposeState::new();
         self.compose.status = Some(ComposeStatus::Saved);
     }
 }
 
+fn matches_query(haiku: &Haiku, lowercase_query: &str) -> bool {
+    lowercase_query.is_empty()
+        || haiku
+            .lines
+            .iter()
+            .any(|line| line.to_lowercase().contains(lowercase_query))
+}
+
 impl BrowseState {
+    /// Full rescan against every haiku — needed whenever the search space
+    /// might need to *widen* (backspace, clear) since previously-excluded
+    /// entries can become matches again.
     fn recompute_matches(&mut self) {
         let query = self.query.to_lowercase();
         self.matches = self
             .all
             .iter()
             .enumerate()
-            .filter(|(_, haiku)| {
-                query.is_empty()
-                    || haiku
-                        .lines
-                        .iter()
-                        .any(|line| line.to_lowercase().contains(&query))
-            })
+            .filter(|(_, haiku)| matches_query(haiku, &query))
             .map(|(i, _)| i)
             .collect();
+        self.clamp_selected();
+    }
+
+    /// Filters within the *current* matches instead of rescanning the whole
+    /// store. Only correct when the query grew by appending characters:
+    /// since `old_query` is then a prefix of `new_query`, anything matching
+    /// `new_query` is guaranteed to already be in `matches` (it necessarily
+    /// matched `old_query` too), so nothing outside the current set could
+    /// ever need to be added back in. On a store with hundreds of thousands
+    /// of entries this turns each keystroke from an O(store size) rescan
+    /// into an O(current matches) filter, which shrinks as you type.
+    fn narrow_matches(&mut self) {
+        let query = self.query.to_lowercase();
+        let all = &self.all;
+        self.matches.retain(|&i| matches_query(&all[i], &query));
+        self.clamp_selected();
+    }
+
+    fn clamp_selected(&mut self) {
         if self.selected >= self.matches.len() {
             self.selected = self.matches.len().saturating_sub(1);
         }
     }
 
+    /// Appends a newly-saved haiku and, instead of rescanning the whole
+    /// store, just checks whether that one new entry matches the current
+    /// query — everything already in `matches` is unaffected by an append.
+    fn push_new_haiku(&mut self, haiku: Haiku) {
+        let query = self.query.to_lowercase();
+        self.all.push(haiku);
+        let idx = self.all.len() - 1;
+        if matches_query(&self.all[idx], &query) {
+            self.matches.push(idx);
+        }
+    }
+
     fn push_query_char(&mut self, c: char) {
         self.query.push(c);
-        self.recompute_matches();
+        self.narrow_matches();
         self.selected = 0;
     }
 
@@ -388,6 +423,29 @@ mod tests {
         let mut app = App::new(sample_haikus());
         type_str(&mut app, "POND");
         assert_eq!(app.browse.matches, vec![0]);
+    }
+
+    #[test]
+    fn narrowing_further_after_a_previous_narrow_is_still_correct() {
+        // Regression guard for the narrow-within-matches optimization: typing
+        // forward must filter to the same result a full rescan would give,
+        // not just whatever happened to already be in `matches`.
+        let mut app = App::new(sample_haikus());
+        type_str(&mut app, "a"); // matches both (each has an "a" somewhere)
+        assert_eq!(app.browse.matches.len(), 2);
+        type_str(&mut app, "pple"); // "apple" only appears in haiku 1
+        assert_eq!(app.browse.matches, vec![1]);
+    }
+
+    #[test]
+    fn backspace_after_narrowing_twice_still_widens_correctly() {
+        let mut app = App::new(sample_haikus());
+        type_str(&mut app, "table"); // narrows to [1]
+        for _ in 0..3 {
+            handle_key(&mut app, key(KeyCode::Backspace)); // "ta"
+        }
+        assert_eq!(app.browse.query, "ta");
+        assert_eq!(app.browse.matches, vec![1]);
     }
 
     #[test]
