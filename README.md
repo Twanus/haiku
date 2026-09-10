@@ -14,7 +14,7 @@ Syllable counts are a heuristic, not a linguist.
 
 ## Install
 
-Linux x86_64 binary from the latest green `dev` build: [Releases](https://github.com/Twanus/haiku/releases/latest).
+Linux and Windows x86_64 binaries from the latest green `dev` build: [Releases](https://github.com/Twanus/haiku/releases/latest).
 
 ```bash
 git clone https://github.com/Twanus/haiku.git
@@ -74,7 +74,7 @@ Every push to `dev` or `main`, and every pull request, runs GitHub Actions:
 | **test** | `cargo test` — unit tests for syllable counting, 5-7-5 parsing, store persistence (atomic writes, locking, corrupt JSON), import, CLI helpers, and the TUI's state/key-handling (terminal-independent by design, so it's testable without a real TTY), plus end-to-end tests of the compiled binary (`check`, `new`, `list`, `random`, `import`). Then `cargo build --release`. |
 | **audit** | `cargo audit` against the [RustSec](https://rustsec.org/) advisory database, so a known-vulnerable crate in `Cargo.lock` fails the build. Also runs weekly, even when dependencies have not changed. |
 | **promote** | If both jobs are green on `dev`, fast-forwards `main` to that commit. |
-| **release** | After promote, uploads a stripped Linux x86_64 binary to the [`latest` GitHub Release](https://github.com/Twanus/haiku/releases/latest). |
+| **release** | After promote, uploads Linux and Windows x86_64 binaries to the [`latest` GitHub Release](https://github.com/Twanus/haiku/releases/latest). |
 
 The badge at the top tracks `main`.
 

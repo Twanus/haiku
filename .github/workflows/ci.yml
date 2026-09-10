@@ -52,27 +52,60 @@ jobs:
           fi
           git push origin HEAD:refs/heads/main
 
-  release:
+  build-release:
     if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [promote]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: haiku-x86_64-unknown-linux-gnu
+            src: haiku
+          - os: windows-latest
+            artifact: haiku-x86_64-pc-windows-msvc.exe
+            src: haiku.exe
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
       - name: Package binary
+        shell: bash
         run: |
-          strip target/release/haiku
-          mv target/release/haiku haiku-x86_64-unknown-linux-gnu
+          src="target/release/${{ matrix.src }}"
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            strip "$src"
+          fi
+          mv "$src" "${{ matrix.artifact }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [build-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: latest
           name: latest
           target_commitish: ${{ github.sha }}
-          files: haiku-x86_64-unknown-linux-gnu
+          files: dist/*
           overwrite_files: true
           make_latest: true
-          body: Linux x86_64 binary from `${{ github.sha }}`, published after tests and cargo audit passed on `dev`.
+          fail_on_unmatched_files: true
+          body: |
+            Binaries from `${{ github.sha }}`, published after tests and cargo audit passed on `dev`.
+
+            - `haiku-x86_64-unknown-linux-gnu` — Linux
+            - `haiku-x86_64-pc-windows-msvc.exe` — Windows
