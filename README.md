@@ -117,13 +117,15 @@ Every push to `dev` or `main`, and every pull request, runs `ci.yml`:
 | **lint** | `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`. |
 | **promote** | If test/audit/lint are all green on `dev`, fast-forwards `main` to that commit. |
 
-Cutting an actual release is a separate, deliberate step, not something every push does: bump `version` in `Cargo.toml`, let it promote to `main` as normal, then push a matching tag (`git tag -a v0.2.0 -m "..." && git push origin v0.2.0`). That triggers `release.yml`:
+Cutting an actual release is a separate, deliberate step, not something every push does: bump `version` in `Cargo.toml`, let it promote to `main` as normal, then push a matching tag (`git tag -a v1.1.0 -m "..." && git push origin v1.1.0`). That triggers `release.yml`:
 
 | Job | What it does |
 | --- | --- |
 | **verify-version** | Fails fast if the pushed tag doesn't match `Cargo.toml`'s version — catches a forgotten bump or a typo'd tag before any build runs. |
 | **build** | Builds and packages the Linux and Windows x86_64 release binaries. |
 | **publish** | Publishes them to a GitHub Release named after the tag, marked as `latest` — every past version stays listed on the [Releases page](https://github.com/Twanus/haiku/releases). |
+
+See [release-manual.md](release-manual.md) for the full step-by-step runbook, including what to do if a release fails partway through.
 
 The badge at the top tracks `main`.
 
