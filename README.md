@@ -74,3 +74,7 @@ Every push to `dev` or `main`, and every pull request, runs GitHub Actions:
 | **promote** | If both jobs are green on `dev`, fast-forwards `main` to that commit. |
 
 The badge at the top tracks `main`.
+
+## License
+
+[MIT](LICENSE)
